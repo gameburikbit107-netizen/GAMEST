@@ -11,6 +11,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -28,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -1492,6 +1495,14 @@ fun DonateOverlaySheet(
     }
 }
 
+// Helper class for floating stream interactive heart reactions
+data class StreamingHeartParticle(
+    val id: Long,
+    val initialX: Float,
+    val scale: Float,
+    val color: Color
+)
+
 // 7. BROADCASTER SCREEN / STUDIO MODE
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -1520,6 +1531,12 @@ fun BroadcasterScreen(
     var broadcasterChatInput by remember { mutableStateOf("") }
     val wallet by viewModel.wallet.collectAsStateWithLifecycle()
 
+    // Floating Overlay & Control States
+    val context = LocalContext.current
+    var isMicMuted by remember { mutableStateOf(false) }
+    var isBeautyFilterOn by remember { mutableStateOf(false) }
+    var heartParticles by remember { mutableStateOf(listOf<StreamingHeartParticle>()) }
+
     Scaffold(
         containerColor = SlateBackground,
         topBar = {
@@ -1534,12 +1551,15 @@ fun BroadcasterScreen(
             )
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (!isLive) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (!isLive) {
                 // FORM TO START live stream
                 Column(
                     modifier = Modifier
@@ -1621,7 +1641,6 @@ fun BroadcasterScreen(
                             Spacer(modifier = Modifier.height(6.dp))
 
                             val isPremium = wallet?.isPremium == true
-                            val context = LocalContext.current
                             val qualityOptions = if (isPremium) {
                                 listOf("720p @ 30 FPS (Standard)", "1080p @ 60 FPS (FHD - VIP 👑)", "4K @ 60 FPS (Ultra HD - VIP 👑)")
                             } else {
@@ -1735,6 +1754,93 @@ fun BroadcasterScreen(
                             }
                         }
 
+                        // Cyber beauty filter overlay effect (radial gradient & glowing border)
+                        if (isBeautyFilterOn) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                CyberPink.copy(alpha = 0.2f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                                    .border(BorderStroke(2.dp, CyberPink.copy(alpha = 0.5f)), RoundedCornerShape(8.dp))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(start = 12.dp, bottom = 12.dp)
+                                        .background(CyberPink.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Face, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("CYBER BEAUTY FILTER: ON", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Microphone status warning overlay
+                        if (isMicMuted) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(start = 12.dp, bottom = if (isBeautyFilterOn) 36.dp else 12.dp)
+                                    .background(LiveRed.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.MicOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("AUDIO SILENT / MUTED", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Floating Animated Heart Particles Overlay
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            heartParticles.forEach { particle ->
+                                androidx.compose.runtime.key(particle.id) {
+                                    var progress by remember { mutableStateOf(0f) }
+                                    LaunchedEffect(Unit) {
+                                        androidx.compose.animation.core.animate(
+                                            initialValue = 0f,
+                                            targetValue = 1f,
+                                            animationSpec = androidx.compose.animation.core.tween(
+                                                durationMillis = 2200,
+                                                easing = androidx.compose.animation.core.LinearOutSlowInEasing
+                                            )
+                                        ) { value, _ ->
+                                            progress = value
+                                        }
+                                        heartParticles = heartParticles.filter { it.id != particle.id }
+                                    }
+
+                                    val yOffset = progress * 220
+                                    val xOffset = particle.initialX + (kotlin.math.sin(progress * Math.PI * 3) * 25).toFloat()
+                                    val alpha = 1f - progress
+
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = null,
+                                        tint = particle.color,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .offset(x = xOffset.dp, y = -yOffset.dp)
+                                            .graphicsLayer(
+                                                scaleX = particle.scale * (1f + progress * 0.4f),
+                                                scaleY = particle.scale * (1f + progress * 0.4f),
+                                                alpha = alpha
+                                            )
+                                            .size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         // Video simulated game overlay underneath
                         Box(
                             modifier = Modifier
@@ -1745,6 +1851,97 @@ fun BroadcasterScreen(
                                 .clip(RoundedCornerShape(4.dp))
                         ) {
                             SimulatedGameStream(streamGame)
+                        }
+
+                        // VERTICAL FLOATING ACTION BAR (IKON MENGAMBANG)
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 12.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                .border(BorderStroke(1.dp, LightSurface.copy(alpha = 0.3f)), RoundedCornerShape(12.dp))
+                                .padding(6.dp)
+                                .testTag("floating_control_menu"),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Mic toggle icon
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isMicMuted) LiveRed.copy(alpha = 0.8f) else CyberCyan.copy(alpha = 0.2f))
+                                    .border(BorderStroke(1.dp, if (isMicMuted) LiveRed else CyberCyan.copy(alpha = 0.6f)), CircleShape)
+                                    .clickable {
+                                        isMicMuted = !isMicMuted
+                                        val mStatus = if (isMicMuted) "Mikrofon DIMATIKAN 🔇" else "Mikrofon AKTIF 🎙️"
+                                        android.widget.Toast.makeText(context, mStatus, android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                    .testTag("floating_mic_btn"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                    contentDescription = "MUTE",
+                                    tint = if (isMicMuted) Color.White else CyberCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // Beauty filter toggle icon
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isBeautyFilterOn) CyberPink.copy(alpha = 0.8f) else CyberPink.copy(alpha = 0.2f))
+                                    .border(BorderStroke(1.dp, if (isBeautyFilterOn) CyberPink else CyberPink.copy(alpha = 0.6f)), CircleShape)
+                                    .clickable {
+                                        isBeautyFilterOn = !isBeautyFilterOn
+                                        val fStatus = if (isBeautyFilterOn) "Cyber Beauty Filter AKTIF ✨" else "Cyber Beauty Filter MATI"
+                                        android.widget.Toast.makeText(context, fStatus, android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                    .testTag("floating_filter_btn"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Face,
+                                    contentDescription = "BEAUTY",
+                                    tint = if (isBeautyFilterOn) Color.White else CyberPink,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // Heart Reaction burst trigger icon
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentGold.copy(alpha = 0.2f))
+                                    .border(BorderStroke(1.dp, AccentGold.copy(alpha = 0.6f)), CircleShape)
+                                    .clickable {
+                                        // Trigger 3 random floating hearts
+                                        repeat(3) { i ->
+                                            val listPos = (20..180).random().toFloat()
+                                            val listScale = (0.7f + (0..5).random() * 0.15f)
+                                            val listColor = listOf(CyberPink, AccentGold, CyberCyan, LiveRed).random()
+                                            heartParticles = (heartParticles + StreamingHeartParticle(
+                                                id = System.nanoTime() + i,
+                                                initialX = listPos,
+                                                scale = listScale,
+                                                color = listColor
+                                            )).takeLast(25)
+                                        }
+                                    }
+                                    .testTag("floating_spark_btn"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "LOVE",
+                                    tint = AccentGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
 
                         // Top-left status card
@@ -2002,6 +2199,97 @@ fun BroadcasterScreen(
                         ) {
                             Text("AKHIRI SIARAN STREAMING 🛑", fontWeight = FontWeight.Bold)
                         }
+                    }
+                }
+            }
+        }
+
+        // Draggable Floating Stream Overlay Icon (Mengambang Saat Live Streaming)
+        if (isLive) {
+                var offsetX by remember { mutableStateOf(300f) }
+                var offsetY by remember { mutableStateOf(60f) }
+
+                val infiniteTransitionState = rememberInfiniteTransition(label = "pulse_floating_bubble")
+                val bubbleLivePulse by infiniteTransitionState.animateFloat(
+                    initialValue = 0.5f,
+                    targetValue = 1.0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "bubble_pulse"
+                )
+
+                Card(
+                    modifier = Modifier
+                        .offset { IntOffset(offsetX.toInt(), offsetY.toInt()) }
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                offsetX = (offsetX + dragAmount.x).coerceIn(10f, 650f)
+                                offsetY = (offsetY + dragAmount.y).coerceIn(10f, 1300f)
+                            }
+                        }
+                        .testTag("draggable_floating_stream_bubble")
+                        .clickable {
+                            // Single tap triggers premium interactive confetti-like heart effects inside app
+                            repeat(6) { i ->
+                                val listPos = (20..180).random().toFloat()
+                                val listScale = (0.7f + (0..5).random() * 0.15f)
+                                val listColor = listOf(CyberPink, AccentGold, CyberCyan, LiveRed).random()
+                                heartParticles = (heartParticles + StreamingHeartParticle(
+                                    id = System.nanoTime() + i,
+                                    initialX = listPos,
+                                    scale = listScale,
+                                    color = listColor
+                                )).takeLast(25)
+                            }
+                            android.widget.Toast.makeText(context, "Mabar Live Lancar! Sinyal Stabil & Terbuka 🚀", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                    colors = CardDefaults.cardColors(containerColor = SlateBackground.copy(alpha = 0.9f)),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(2.dp, CyberPink)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Pulsing red live indicator dot
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(LiveRed.copy(alpha = bubbleLivePulse), CircleShape)
+                                .border(BorderStroke(1.dp, Color.White), CircleShape)
+                        )
+
+                        Text(
+                            text = "LIVE",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(12.dp)
+                                .background(LightSurface.copy(alpha = 0.5f))
+                        )
+
+                        Icon(
+                            imageVector = Icons.Default.Videocam,
+                            contentDescription = "Live Cam",
+                            tint = CyberCyan,
+                            modifier = Modifier.size(14.dp)
+                        )
+
+                        Text(
+                            text = streamGame,
+                            color = AccentGold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -2370,36 +2658,153 @@ private fun formatDuration(sec: Long): String {
 @Composable
 fun CameraPreviewFeed() {
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val context = LocalContext.current
+    var hasCameraError by remember { mutableStateOf(false) }
 
-    AndroidView(
-        factory = { ctx ->
-            PreviewView(ctx).apply {
-                val cameraProviderProvider = ProcessCameraProvider.getInstance(ctx)
-                cameraProviderProvider.addListener({
-                    try {
-                        val cameraProvider = cameraProviderProvider.get()
-                        
-                        val preview = androidx.camera.core.Preview.Builder().build()
-                        val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA // Front camera for stream simulation!
+    // Detect if running on emulator / virtual sandbox platform to prevent CameraX native crashes
+    val isEmulator = remember {
+        val brand = android.os.Build.BRAND ?: ""
+        val device = android.os.Build.DEVICE ?: ""
+        val model = android.os.Build.MODEL ?: ""
+        val hardware = android.os.Build.HARDWARE ?: ""
+        val fingerprint = android.os.Build.FINGERPRINT ?: ""
+        
+        brand.startsWith("generic") ||
+        device.startsWith("generic") ||
+        model.contains("google_sdk") ||
+        model.contains("Emulator") ||
+        model.contains("Android SDK built for x86") ||
+        hardware.contains("goldfish") ||
+        hardware.contains("ranchu") ||
+        fingerprint.startsWith("generic") ||
+        fingerprint.startsWith("unknown")
+    }
 
-                        preview.surfaceProvider = this.surfaceProvider
+    // Safe, non-blocking check to verify if the hardware actually has cameras before starting CameraX.
+    // Extremely effective at preventing crashes on headless virtual/cloud-emulation platforms.
+    val hasPhysicalCamera = remember(context) {
+        try {
+            val cameraManager = context.getSystemService(android.content.Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+            cameraManager != null && cameraManager.cameraIdList.isNotEmpty()
+        } catch (exc: Throwable) {
+            Log.w("CameraPreviewFeed", "Failed to query CameraManager for available devices: ${exc.message}")
+            false
+        }
+    }
 
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview
-                        )
-                    } catch (exc: Throwable) {
-                        Log.e("CameraPreviewFeed", "Error binding camera preview: ${exc.message}", exc)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
+    if (hasCameraError || !hasPhysicalCamera || isEmulator) {
+        // Show a polished, animated tech-cyber camera feed fallback
+        val infiniteTransition = rememberInfiniteTransition(label = "cam_fallback")
+        val pulse by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulse"
+        )
+        val scanlineY by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2500, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "scanline"
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F0B1E))
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                // Background grid lines
+                val numGridLines = 10
+                val gridColor = CyberCyan.copy(alpha = 0.15f)
+                for (i in 0..numGridLines) {
+                    val x = size.width * (i.toFloat() / numGridLines)
+                    drawLine(gridColor, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 1f)
+                    val y = size.height * (i.toFloat() / numGridLines)
+                    drawLine(gridColor, start = Offset(0f, y), end = Offset(size.width, y), strokeWidth = 1f)
+                }
+
+                // Scanning line
+                val scanY = size.height * scanlineY
+                drawLine(
+                    color = CyberCyan.copy(alpha = 0.4f),
+                    start = Offset(0f, scanY),
+                    end = Offset(size.width, scanY),
+                    strokeWidth = 3f
+                )
             }
-        },
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(8.dp))
-    )
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Videocam,
+                    contentDescription = null,
+                    tint = CyberCyan.copy(alpha = pulse),
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "CAM_SIMULATOR_ACTIVE",
+                    color = CyberCyan,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Virtual Studio Feed Connected",
+                    color = TextSecondary,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+        }
+    } else {
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                try {
+                    val cameraProviderProvider = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderProvider.addListener({
+                        try {
+                            if (hasCameraError) return@addListener
+                            val cameraProvider = cameraProviderProvider.get()
+                            
+                            val preview = androidx.camera.core.Preview.Builder().build()
+                            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA // Front camera for stream simulation!
+
+                            preview.surfaceProvider = previewView.surfaceProvider
+
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                cameraSelector,
+                                preview
+                            )
+                        } catch (exc: Throwable) {
+                            Log.e("CameraPreviewFeed", "Error binding camera preview: ${exc.message}")
+                            hasCameraError = true
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+                } catch (exc: Throwable) {
+                    Log.e("CameraPreviewFeed", "Error initializing ProcessCameraProvider: ${exc.message}")
+                    hasCameraError = true
+                }
+                previewView
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(8.dp))
+        )
+    }
 }
 
 // Automated retro style shooting game loop in Compose Canvas
