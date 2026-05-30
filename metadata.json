@@ -1,0 +1,6 @@
+{
+  "name": "GAMEST",
+  "description": "Aplikasi Mobile Game Live Streaming interaktif dengan fitur pencarian, donasi kustom, live chat, dan studio penyiar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
